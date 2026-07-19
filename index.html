@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<title>Список покупок</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root {
+    --mint: #00C2B8;
+    --mint-dark: #00A89F;
+    --purple: #A855F7;
+    --red: #FF3B30;
+    --bg: var(--tg-bg, #F2F2F7);
+    --card: var(--tg-card, #FFFFFF);
+    --text: var(--tg-text, #1C1C1E);
+    --hint: var(--tg-hint, #8E8E93);
+    --sep: rgba(120,120,128,0.16);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+    overscroll-behavior-y: contain;
+  }
+  #bgFx {
+    position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background:
+      radial-gradient(circle at 15% 8%, rgba(0,194,184,0.16), transparent 40%),
+      radial-gradient(circle at 90% 80%, rgba(168,85,247,0.14), transparent 45%);
+  }
+  #app, #overlay { min-height: 100vh; }
+  .screen {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    padding: max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom));
+  }
+  .spacer { flex: 1 1 auto; }
+
+  /* Hero card used on welcome / create / open */
+  .hero {
+    background: color-mix(in srgb, var(--card) 85%, transparent);
+    border-radius: 28px;
+    padding: 44px 22px;
+    text-align: center;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.12);
+  }
+  .hero-icon {
+    width: 110px; height: 110px; border-radius: 50%;
+    margin: 0 auto 22px;
+    display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, rgba(0,194,184,0.25), rgba(168,85,247,0.18));
+  }
+  .hero h1 { font-size: 26px; font-weight: 750; margin: 0 0 10px; letter-spacing: -0.3px; }
+  .hero p { font-size: 15px; color: var(--hint); margin: 0; line-height: 1.4; }
+
+  .btn {
+    border: none; border-radius: 16px; font-size: 16px; font-weight: 600;
+    padding: 15px 18px; width: 100%; display: flex; align-items: center;
+    justify-content: center; gap: 8px; cursor: pointer;
+  }
+  .btn-primary { background: linear-gradient(90deg, var(--mint), var(--mint-dark)); color: #fff; box-shadow: 0 10px 24px rgba(0,194,184,0.35); }
+  .btn-outline { background: var(--card); color: var(--mint); border: 2px solid var(--mint); }
+  .btn-text-danger { background: transparent; color: var(--red); font-weight: 500; }
+  .btn:disabled { opacity: 0.5; }
+  .btn-row { display: flex; flex-direction: column; gap: 14px; margin-top: 18px; }
+
+  .code-box {
+    font-size: 42px; font-weight: 800; letter-spacing: 6px; color: var(--mint);
+    background: rgba(0,194,184,0.1); border-radius: 16px; padding: 14px 20px; margin: 18px 0;
+  }
+  .code-input {
+    width: 100%; border: none; outline: none; background: transparent;
+    text-align: center; font-size: 36px; font-weight: 800; letter-spacing: 8px;
+    color: var(--mint); text-transform: uppercase;
+  }
+  .code-wrap {
+    background: rgba(0,194,184,0.1); border-radius: 16px; padding: 14px 10px; margin: 18px 0;
+    border: 2px solid transparent;
+  }
+  .code-wrap.error { border-color: var(--red); }
+  .err-text { color: var(--red); font-size: 13px; margin-top: 4px; }
+  .hint-text { color: var(--hint); font-size: 13px; line-height: 1.4; margin-top: 10px; }
+
+  /* Loading */
+  .loading-dot {
+    width: 90px; height: 90px; border-radius: 50%; background: var(--mint);
+    margin: 0 auto 24px; animation: pulse 1.1s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { transform: scale(1); opacity: 1;} 50% { transform: scale(1.5); opacity: 0.55;} }
+
+  /* Product list */
+  .top-bar { display:flex; align-items:center; justify-content:space-between; padding: 4px 2px 14px; }
+  .top-bar h2 { font-size: 30px; font-weight: 800; margin: 0; letter-spacing: -0.4px; }
+  .list-scroll { flex: 1; overflow-y: auto; padding-bottom: 100px; -webkit-overflow-scrolling: touch; }
+
+  .cat-card {
+    background: color-mix(in srgb, var(--card) 88%, transparent);
+    border-radius: 18px; margin-bottom: 16px; overflow: hidden;
+    box-shadow: 0 8px 22px rgba(0,0,0,0.09);
+  }
+  .cat-head { display:flex; align-items:center; justify-content:space-between; padding: 14px 16px 10px; }
+  .cat-head .name { font-weight: 650; font-size: 16px; }
+  .cat-head .count { font-size: 13px; color: var(--hint); background: rgba(120,120,128,0.14); padding: 3px 10px; border-radius: 8px; }
+
+  .prod-row { display:flex; align-items:center; gap: 8px; padding: 9px 16px; border-top: 1px solid var(--sep); }
+  .prod-row:first-of-type { border-top: none; }
+  .prod-name { flex: 1; font-size: 16px; cursor: pointer; }
+  .qty-controls { display:flex; align-items:center; gap: 2px; }
+  .qty-btn { background: none; border: none; width: 32px; height: 32px; display:flex; align-items:center; justify-content:center; cursor:pointer; color: var(--mint); }
+  .qty-btn:disabled { color: #B0B0B5; }
+  .qty-val { min-width: 26px; text-align:center; font-size: 16px; }
+  .qty-btn.check { margin-left: 6px; color: var(--mint); }
+
+  .empty-wrap { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap: 6px; }
+  .empty-wrap .ic { opacity: 0.55; margin-bottom: 8px; }
+  .empty-wrap h3 { font-size: 22px; font-weight: 750; margin: 0; }
+  .empty-wrap p { color: var(--hint); font-size: 15px; margin: 0; line-height: 1.4; }
+
+  .fab-row { position: fixed; left: 0; right: 0; bottom: max(16px, env(safe-area-inset-bottom)); display:flex; gap: 12px; padding: 0 20px; }
+  .fab-add {
+    flex: 1; background: var(--mint); color: #fff; border: none; border-radius: 50px;
+    font-size: 17px; font-weight: 650; padding: 15px; display:flex; align-items:center; justify-content:center; gap:8px;
+    box-shadow: 0 10px 24px rgba(0,194,184,0.35); cursor: pointer;
+  }
+  .fab-menu {
+    width: 56px; height: 56px; border-radius: 50%; background: var(--card); border: 1px solid var(--mint);
+    color: var(--mint); display:flex; align-items:center; justify-content:center; cursor:pointer;
+    box-shadow: 0 10px 24px rgba(0,194,184,0.25);
+  }
+
+  /* Overlay / sheets */
+  #overlay { position: fixed; inset: 0; z-index: 50; display: none; }
+  #overlay.show { display: block; }
+  .ov-backdrop { position:absolute; inset:0; background: rgba(0,0,0,0.35); }
+  .sheet {
+    position: absolute; left: 0; right: 0; bottom: 0; background: var(--bg);
+    border-radius: 20px 20px 0 0; max-height: 92vh; display:flex; flex-direction:column;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .sheet-full { top:0; border-radius:0; max-height:100vh; }
+  .sheet-handle { width: 36px; height: 5px; background: var(--sep); border-radius: 3px; margin: 10px auto; }
+  .sheet-title { text-align:center; font-weight: 650; font-size: 16px; padding-bottom: 8px; }
+
+  .search-wrap { display:flex; align-items:center; gap:10px; background: var(--card); border-radius: 12px; padding: 12px 14px; margin: 0 16px 8px; box-shadow: 0 4px 14px rgba(0,0,0,0.06); }
+  .search-wrap input { flex:1; border:none; outline:none; background:transparent; font-size:16px; color: var(--text); }
+  .found-count { padding: 0 20px 8px; font-size: 12px; color: var(--hint); }
+  .sugg-scroll { flex:1; overflow-y:auto; padding: 0 16px 24px; -webkit-overflow-scrolling: touch; }
+  .sugg-list { background: var(--card); border-radius: 12px; overflow:hidden; box-shadow: 0 4px 14px rgba(0,0,0,0.06); }
+  .sugg-row { display:flex; align-items:center; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--sep); }
+  .sugg-row:first-child { border-top:none; }
+  .sugg-main { flex:1; cursor:pointer; }
+  .sugg-main .n { font-size: 16px; }
+  .sugg-main .n mark { background:none; color: var(--mint); font-weight:650; }
+  .sugg-main .c { font-size: 12px; color: var(--hint); margin-top:2px; }
+  .sugg-del { background:none; border:none; color: var(--red); cursor:pointer; padding: 4px; }
+
+  .cat-pick-list { padding: 4px 12px 20px; overflow-y:auto; }
+  .cat-pick-row { display:flex; align-items:center; justify-content:space-between; padding: 14px 12px; border-radius: 12px; cursor:pointer; }
+  .cat-pick-row.active { background: rgba(0,194,184,0.12); }
+  .cat-pick-row .label { font-size: 16px; }
+  .cat-pick-row .dot { width: 20px; height:20px; border-radius:50%; border: 2px solid var(--mint); display:flex; align-items:center; justify-content:center; }
+  .cat-pick-row.active .dot { background: var(--mint); }
+
+  .hidden { display: none !important; }
+  svg { display:block; }
+</style>
+</head>
+<body>
+  <div id="bgFx"></div>
+  <div id="app"></div>
+  <div id="overlay"><div class="ov-backdrop"></div></div>
+
+<script>
+/* =========================================================
+   Telegram Web App bootstrap
+   ========================================================= */
+const tg = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
+
+function applyTheme() {
+  if (!tg) return;
+  const p = tg.themeParams || {};
+  const root = document.documentElement.style;
+  if (p.bg_color) root.setProperty('--tg-bg', p.bg_color);
+  if (p.secondary_bg_color) root.setProperty('--tg-card', p.secondary_bg_color);
+  if (p.text_color) root.setProperty('--tg-text', p.text_color);
+  if (p.hint_color) root.setProperty('--tg-hint', p.hint_color);
+}
+
+function haptic(style) { if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred(style); }
+function notify(kind) { if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred(kind); }
+
+function showAlert(msg) {
+  return new Promise(resolve => {
+    if (tg && tg.showAlert) tg.showAlert(msg, () => resolve());
+    else { alert(msg); resolve(); }
+  });
+}
+function showConfirm(msg) {
+  return new Promise(resolve => {
+    if (tg && tg.showConfirm) tg.showConfirm(msg, ok => resolve(ok));
+    else resolve(confirm(msg));
+  });
+}
+
+/* Cloud/local storage (list code persists across devices when opened via Telegram) */
+const storage = {
+  get(key) {
+    return new Promise(resolve => {
+      if (tg && tg.CloudStorage) tg.CloudStorage.getItem(key, (err, v) => resolve(!err && v ? v : null));
+      else resolve(localStorage.getItem(key));
+    });
+  },
+  set(key, value) {
+    return new Promise(resolve => {
+      if (tg && tg.CloudStorage) tg.CloudStorage.setItem(key, value, () => resolve());
+      else { localStorage.setItem(key, value); resolve(); }
+    });
+  },
+  remove(key) {
+    return new Promise(resolve => {
+      if (tg && tg.CloudStorage) tg.CloudStorage.removeItem(key, () => resolve());
+      else { localStorage.removeItem(key); resolve(); }
+    });
+  }
+};
+
+/* =========================================================
+   Data / constants (mirrors SupabaseService.swift)
+   ========================================================= */
+const categoryNames = {
+  1: "🧻 Непродовольственные товары",
+  2: "💊 Аптека",
+  3: "👗 Одежда и обувь",
+  4: "🍏 Овощи и фрукты",
+  5: "🥛 Молочная продукция",
+  6: "🥩 Мясо и рыба",
+  7: "🍖 Гастрономия",
+  8: "🥫 Бакалея",
+  9: "🍞 Выпечка",
+  10: "🥤 Вода и напитки",
+  11: "❄️ Замороженная продукция",
+  12: "🍫 Сладости и снеки",
+  13: "🍱 Готовая кулинария",
+  14: "⚠️ Прочее",
+};
+const categoryColors = {
+  1:'#AF52DE',2:'#FF3B30',3:'#30B0C7',4:'#34C759',5:'#007AFF',6:'#FF9500',
+  7:'#A2845E',8:'#FFCC00',9:'#FF9500',10:'#32ADE6',11:'#5856D6',12:'#FF2D55',
+  13:'#00C2B8',14:'#8E8E93'
+};
+
+const API_BASE = "https://d5dcqehsg55f5a0t3sbq.uvah0e6r.apigw.yandexcloud.net/api";
+
+const api = {
+  async get(action, listId) {
+    const url = new URL(API_BASE);
+    url.searchParams.set('action', action);
+    url.searchParams.set('list_id', listId);
+    const res = await fetch(url.toString());
+    if (!res.ok) throw new Error('network');
+    return res.json();
+  },
+  async post(body) {
+    const res = await fetch(API_BASE, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) throw new Error('network');
+    return res.json();
+  },
+  checkList: (listId) => api.get('checkList', listId),
+  getActive: (listId) => api.get('getActive', listId),
+  getAll: (listId) => api.get('getAll', listId),
+  createList: (listId) => api.post({ action: 'createList', list_id: listId }),
+  upsert: (p) => api.post({ action: 'upsert', name: p.name, quantity: p.quantity, category: p.category, freq: p.freq, list_id: p.list_id }),
+  updateQuantity: (name, list_id, quantity, freq) => api.post({ action: 'updateQuantity', name, list_id, quantity, freq }),
+  updateCategory: (name, list_id, category) => api.post({ action: 'updateCategory', name, list_id, category }),
+  remove: (name, list_id) => api.post({ action: 'delete', name, list_id }),
+};
+
+function generateListId() {
+  const numbers = String(Math.floor(Math.random() * 1000)).padStart(3, '0');
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  let letters = "";
+  for (let i = 0; i < 2; i++) letters += alphabet[Math.floor(Math.random() * 26)];
+  return numbers + letters;
+}
+function sortedByFrequency(products) {
+  return [...products].sort((a, b) => (b.freq - a.freq) || a.name.localeCompare(b.name));
+}
+function sortedTopProducts(products) {
+  return sortedByFrequency(products).slice(0, 10);
+}
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function highlightMatch(name, query) {
+  if (!query) return esc(name);
+  const idx = name.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return esc(name);
+  return esc(name.slice(0, idx)) + '<mark>' + esc(name.slice(idx, idx + query.length)) + '</mark>' + esc(name.slice(idx + query.length));
+}
+
+/* =========================================================
+   Icons (small inline SVGs, SF-Symbols-ish)
+   ========================================================= */
+const ic = {
+  cart: `<svg width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="url(#g1)" stroke-width="1.6"><defs><linearGradient id="g1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#00C2B8"/><stop offset="1" stop-color="#A855F7"/></linearGradient></defs><path d="M3 4h2l2.4 12.4a2 2 0 0 0 2 1.6h7.2a2 2 0 0 0 2-1.6L20 8H6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="10" cy="21" r="1.4" fill="#00C2B8" stroke="none"/><circle cx="17" cy="21" r="1.4" fill="#00C2B8" stroke="none"/></svg>`,
+  cartPlus: `<svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="url(#g2)" stroke-width="1.5"><defs><linearGradient id="g2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#00C2B8"/><stop offset="1" stop-color="#A855F7"/></linearGradient></defs><path d="M3 4h2l2.4 12.4a2 2 0 0 0 2 1.6h7.2a2 2 0 0 0 2-1.6L20 8H6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="10" cy="21" r="1.2" fill="#00C2B8" stroke="none"/><circle cx="17" cy="21" r="1.2" fill="#00C2B8" stroke="none"/><path d="M17 2v5M14.5 4.5h5" stroke-linecap="round"/></svg>`,
+  key: `<svg width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="#00C2B8" stroke-width="1.6"><circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 4l3 3M13.5 6.5l2.5 2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  check: `<svg width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="#34C759" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  plusCircle: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8" stroke-linecap="round"/></svg>`,
+  minusCircle: `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M8 12h8" stroke-linecap="round"/></svg>`,
+  addCircle: `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8" stroke-linecap="round"/></svg>`,
+  checkCircleFill: `<svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/><path d="M8 12.3l2.6 2.6L16.4 9" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  arrowRight: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M10 8l4 4-4 4" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  ellipsis: `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>`,
+  trash: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  search: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.3-4.3" stroke-linecap="round"/></svg>`,
+};
+
+/* =========================================================
+   App state
+   ========================================================= */
+const state = {
+  listId: null,
+  isAuthenticated: false,
+  isLoaded: false,
+  products: [],
+  allProducts: [],
+  authScreen: 'welcome',   // welcome | create | open
+  showAddSheet: false,
+  showCategoryPicker: false,
+  selectedProduct: null,
+  createGeneratedId: '',
+  createError: '',
+  creating: false,
+  openCode: '',
+  openError: '',
+  validating: false,
+};
+
+let mainBtnHandler = null;
+let backBtnHandler = null;
+function setMainButton(opts) {
+  if (!tg) return;
+  const mb = tg.MainButton;
+  if (mainBtnHandler) mb.offClick(mainBtnHandler);
+  if (!opts) { mb.hide(); mainBtnHandler = null; return; }
+  mb.setText(opts.text);
+  opts.disabled ? mb.disable() : mb.enable();
+  opts.color ? mb.setParams({ color: opts.color }) : mb.setParams({ color: '#00C2B8' });
+  mainBtnHandler = opts.onClick;
+  mb.onClick(mainBtnHandler);
+  mb.show();
+}
+function setBackButton(onClick) {
+  if (!tg) return;
+  const bb = tg.BackButton;
+  if (backBtnHandler) bb.offClick(backBtnHandler);
+  if (!onClick) { bb.hide(); backBtnHandler = null; return; }
+  backBtnHandler = onClick;
+  bb.onClick(backBtnHandler);
+  bb.show();
+}
+
+/* =========================================================
+   Rendering
+   ========================================================= */
+function render() {
+  const app = document.getElementById('app');
+  if (!state.isAuthenticated) {
+    if (state.authScreen === 'create') renderCreate(app);
+    else if (state.authScreen === 'open') renderOpen(app);
+    else renderWelcome(app);
+  } else if (!state.isLoaded) {
+    renderLoading(app);
+    setMainButton(null); setBackButton(null);
+  } else {
+    renderProductList(app);
+  }
+  renderOverlay();
+}
+
+function renderWelcome(app) {
+  setMainButton(null); setBackButton(null);
+  app.innerHTML = `
+    <div class="screen">
+      <div class="spacer"></div>
+      <div class="hero">
+        <div class="hero-icon">${ic.cartPlus}</div>
+        <h1>Список покупок</h1>
+        <p>Создайте свой список или<br>присоединитесь к существующему</p>
+      </div>
+      <div class="spacer"></div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btnCreate">${ic.plusCircle} Создать новый список</button>
+        <button class="btn btn-outline" id="btnOpen">${ic.arrowRight} Открыть существующий</button>
+      </div>
+    </div>`;
+  document.getElementById('btnCreate').onclick = () => { haptic('light'); state.authScreen = 'create'; state.createGeneratedId = generateListId(); state.createError=''; render(); };
+  document.getElementById('btnOpen').onclick = () => { haptic('light'); state.authScreen = 'open'; state.openCode=''; state.openError=''; render(); };
+}
+
+function renderCreate(app) {
+  app.innerHTML = `
+    <div class="screen">
+      <div class="spacer"></div>
+      <div class="hero">
+        ${ic.check}
+        <p style="margin-top:14px;color:var(--hint);font-size:15px;">Ваш код списка</p>
+        <div class="code-box">${esc(state.createGeneratedId)}</div>
+        ${state.createError ? `<div class="err-text">${esc(state.createError)}</div>` : ''}
+        <p>Сохраните этот код,<br>чтобы поделиться списком</p>
+      </div>
+      <div class="spacer"></div>
+    </div>`;
+  setBackButton(() => { haptic('light'); state.authScreen = 'welcome'; render(); });
+  setMainButton({
+    text: state.creating ? 'Создаём…' : 'Создать список',
+    disabled: state.creating,
+    onClick: async () => {
+      if (state.creating) return;
+      state.creating = true; state.createError = ''; tg && tg.MainButton.showProgress();
+      render();
+      try {
+        const list = await api.createList(state.createGeneratedId);
+        state.products = list; state.allProducts = list; state.isLoaded = true;
+        state.listId = state.createGeneratedId;
+        state.isAuthenticated = true;
+        await storage.set('savedListId', state.listId);
+        state.creating = false;
+        notify('success');
+        loadData();
+        render();
+      } catch (e) {
+        state.creating = false;
+        state.createError = 'Ошибка создания списка. Попробуйте еще раз';
+        tg && tg.MainButton.hideProgress();
+        render();
+      }
+    }
+  });
+}
+
+function renderOpen(app) {
+  app.innerHTML = `
+    <div class="screen">
+      <div class="spacer"></div>
+      <div class="hero">
+        ${ic.key}
+        <p style="margin-top:14px;font-size:17px;font-weight:600;color:var(--text);">Введите код списка</p>
+        <div class="code-wrap ${state.openError ? 'error' : ''}">
+          <input class="code-input" id="codeInput" maxlength="5" placeholder="12345" autocapitalize="characters" autocomplete="off" value="${esc(state.openCode)}">
+        </div>
+        ${state.openError ? `<div class="err-text">${esc(state.openError)}</div>` : ''}
+        <p class="hint-text">Формат: 3 цифры + 2 буквы<br>Например: 123AB</p>
+      </div>
+      <div class="spacer"></div>
+    </div>`;
+  const input = document.getElementById('codeInput');
+  input.focus();
+  input.addEventListener('input', () => {
+    state.openCode = input.value.toUpperCase().slice(0, 5);
+    input.value = state.openCode;
+    state.openError = '';
+    document.querySelector('.code-wrap').classList.remove('error');
+    const err = document.querySelector('.err-text'); if (err) err.remove();
+    refreshOpenMainButton();
+  });
+  setBackButton(() => { haptic('light'); state.authScreen = 'welcome'; render(); });
+  refreshOpenMainButton();
+}
+function refreshOpenMainButton() {
+  setMainButton({
+    text: state.validating ? 'Проверяем…' : 'Открыть список',
+    disabled: state.openCode.length !== 5 || state.validating,
+    onClick: async () => {
+      if (state.openCode.length !== 5) {
+        state.openError = 'Код должен содержать 5 символов'; render(); return;
+      }
+      state.validating = true; tg && tg.MainButton.showProgress(); refreshOpenMainButton();
+      try {
+        const res = await api.checkList(state.openCode);
+        state.validating = false; tg && tg.MainButton.hideProgress();
+        if (res.exists) {
+          state.listId = state.openCode;
+          state.isAuthenticated = true;
+          await storage.set('savedListId', state.listId);
+          notify('success');
+          loadData();
+          render();
+        } else {
+          state.openError = 'Список с таким кодом не существует';
+          notify('error');
+          render();
+        }
+      } catch (e) {
+        state.validating = false; tg && tg.MainButton.hideProgress();
+        state.openError = 'Не удалось проверить код. Попробуйте ещё раз';
+        render();
+      }
+    }
+  });
+}
+
+function renderLoading(app) {
+  app.innerHTML = `
+    <div class="screen" style="align-items:center;justify-content:center;">
+      <div class="loading-dot"></div>
+      <p style="color:var(--hint);font-size:17px;">Загружаем список...</p>
+    </div>`;
+}
+
+function renderProductList(app) {
+  setMainButton(null); setBackButton(null);
+  const grouped = {};
+  for (const p of state.products) (grouped[p.category] ||= []).push(p);
+  const catIds = Object.keys(categoryNames).map(Number).sort((a,b)=>a-b);
+
+  let body;
+  if (state.products.length === 0) {
+    body = `
+      <div class="empty-wrap">
+        <div class="ic">${ic.cart}</div>
+        <h3>Список покупок пуст</h3>
+        <p>Начните добавлять продукты,<br>чтобы не забыть ничего важного</p>
+      </div>`;
+  } else {
+    body = `<div class="list-scroll" id="listScroll">` + catIds.map(cid => {
+      const items = grouped[cid];
+      if (!items || !items.length) return '';
+      const color = categoryColors[cid] || '#00C2B8';
+      return `
+        <div class="cat-card">
+          <div class="cat-head">
+            <div class="name">${categoryNames[cid]}</div>
+            <div class="count" style="background:${color}33;">${items.length}</div>
+          </div>
+          ${items.map(p => productRowHtml(p, color)).join('')}
+        </div>`;
+    }).join('') + `</div>`;
+  }
+
+  app.innerHTML = `
+    <div class="screen" style="padding-bottom:0;">
+      <div class="top-bar"><h2>Список покупок</h2></div>
+      ${body}
+    </div>
+    <div class="fab-row">
+      <button class="fab-add" id="btnAdd">${ic.plusCircle} Добавить продукт</button>
+      <button class="fab-menu" id="btnMenu">${ic.ellipsis}</button>
+    </div>`;
+
+  document.getElementById('btnAdd').onclick = () => openAddSheet();
+  document.getElementById('btnMenu').onclick = () => openMenu();
+
+  for (const p of state.products) {
+    const row = document.getElementById('row-' + cssId(p.name));
+    if (!row) continue;
+    row.querySelector('.prod-name').onclick = () => openCategoryPicker(p);
+    const [dec, inc, chk] = row.querySelectorAll('.qty-btn');
+    dec.onclick = () => changeQuantity(p, -1);
+    inc.onclick = () => changeQuantity(p, 1);
+    chk.onclick = () => changeQuantity(p, -p.quantity);
+  }
+}
+
+function cssId(name) { return name.replace(/[^a-zA-Z0-9А-Яа-яЁё]/g, '_') + '_' + Math.abs(hashCode(name)); }
+function hashCode(s) { let h=0; for (let i=0;i<s.length;i++) h = (h*31 + s.charCodeAt(i))|0; return h; }
+
+function productRowHtml(p, color) {
+  return `
+    <div class="prod-row" id="row-${cssId(p.name)}">
+      <div class="prod-name">${esc(p.name)}</div>
+      <div class="qty-controls">
+        <button class="qty-btn" style="color:${p.quantity>1?color:'#B0B0B5'}" ${p.quantity<=1?'disabled':''}>${ic.minusCircle}</button>
+        <span class="qty-val">${p.quantity}</span>
+        <button class="qty-btn" style="color:${color}" ${p.quantity>=99?'disabled':''}>${ic.addCircle}</button>
+        <button class="qty-btn check" style="color:${p.quantity<100?color:'#B0B0B5'}">${ic.checkCircleFill}</button>
+      </div>
+    </div>`;
+}
+
+/* ---- Overlay dispatcher ---- */
+function renderOverlay() {
+  const ov = document.getElementById('overlay');
+  if (state.showAddSheet) { renderAddSheet(ov); ov.classList.add('show'); }
+  else if (state.showCategoryPicker) { renderCategorySheet(ov); ov.classList.add('show'); }
+  else { ov.classList.remove('show'); ov.innerHTML = `<div class="ov-backdrop"></div>`; }
+}
+
+/* ---- Add product sheet ---- */
+let addQuery = '';
+function openAddSheet() {
+  haptic('light');
+  addQuery = '';
+  state.showAddSheet = true;
+  render();
+}
+function closeAddSheet() {
+  state.showAddSheet = false;
+  setMainButton(null); setBackButton(null);
+  render();
+}
+function currentSuggestions() {
+  const q = addQuery.trim().toLowerCase();
+  if (!q) return sortedTopProducts(state.allProducts);
+  return sortedByFrequency(state.allProducts.filter(p => p.name.toLowerCase().includes(q)));
+}
+function renderAddSheet(ov) {
+  const suggestions = currentSuggestions();
+  ov.innerHTML = `
+    <div class="ov-backdrop" id="addBackdrop"></div>
+    <div class="sheet sheet-full">
+      <div class="sheet-title">Добавить продукт</div>
+      <div class="search-wrap">
+        ${ic.search}
+        <input id="addSearchInput" placeholder="Название продукта" autocomplete="off" value="${esc(addQuery)}">
+      </div>
+      ${(addQuery && suggestions.length) ? `<div class="found-count">Найдено: ${suggestions.length}</div>` : ''}
+      <div class="sugg-scroll" id="suggScroll">${suggestionsHtml(suggestions)}</div>
+    </div>`;
+  document.getElementById('addBackdrop').onclick = () => { haptic('light'); closeAddSheet(); };
+  const input = document.getElementById('addSearchInput');
+  input.focus();
+  input.addEventListener('input', () => {
+    addQuery = input.value;
+    updateAddSheetPartial();
+  });
+  wireSuggestionHandlers();
+  setBackButton(() => { haptic('light'); closeAddSheet(); });
+  refreshAddMainButton();
+}
+function suggestionsHtml(suggestions) {
+  if (suggestions.length) {
+    return `<div class="sugg-list">` + suggestions.map(p => `
+      <div class="sugg-row" data-name="${esc(p.name)}">
+        <div class="sugg-main" data-act="add">
+          <div class="n">${highlightMatch(p.name, addQuery)}</div>
+          ${categoryNames[p.category] ? `<div class="c">${categoryNames[p.category]}</div>` : ''}
+        </div>
+        <button class="sugg-del" data-act="del">${ic.trash}</button>
+      </div>`).join('') + `</div>`;
+  }
+  if (addQuery) {
+    return `
+      <div class="empty-wrap" style="padding-top:40px;">
+        <div class="ic">${ic.cart}</div>
+        <h3>Новый продукт</h3>
+        <p>Такого продукта еще нет в базе.<br>Добавьте его!</p>
+      </div>`;
+  }
+  return '';
+}
+function updateAddSheetPartial() {
+  const suggestions = currentSuggestions();
+  const scroll = document.getElementById('suggScroll');
+  if (scroll) scroll.innerHTML = suggestionsHtml(suggestions);
+  const foundEl = document.querySelector('.found-count');
+  const wantFound = addQuery && suggestions.length;
+  if (wantFound && !foundEl) {
+    const wrap = document.querySelector('.search-wrap');
+    wrap.insertAdjacentHTML('afterend', `<div class="found-count">Найдено: ${suggestions.length}</div>`);
+  } else if (!wantFound && foundEl) {
+    foundEl.remove();
+  } else if (wantFound && foundEl) {
+    foundEl.textContent = `Найдено: ${suggestions.length}`;
+  }
+  wireSuggestionHandlers();
+  refreshAddMainButton();
+}
+function wireSuggestionHandlers() {
+  document.querySelectorAll('.sugg-row').forEach(row => {
+    const name = row.getAttribute('data-name');
+    row.querySelector('[data-act="add"]').onclick = () => addProductByName(name);
+    row.querySelector('[data-act="del"]').onclick = () => deleteFromDatabase(name);
+  });
+}
+function refreshAddMainButton() {
+  if (addQuery.trim()) {
+    setMainButton({ text: `Добавить «${addQuery.trim()}»`, onClick: () => addProductByName(addQuery) });
+  } else {
+    setMainButton(null);
+  }
+}
+async function addProductByName(name) {
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  haptic('light');
+  const existsActive = state.products.some(p => p.name.toLowerCase() === trimmed.toLowerCase() && p.quantity > 0);
+  if (existsActive) { await showAlert('Данный продукт уже есть в списке!'); return; }
+  const existing = state.allProducts.find(p => p.name.toLowerCase() === trimmed.toLowerCase());
+  try {
+    if (existing) {
+      const newFreq = existing.freq + 1;
+      const restored = { ...existing, quantity: 1, freq: newFreq };
+      state.products.push(restored);
+      const i = state.allProducts.findIndex(p => p.name === existing.name);
+      if (i >= 0) state.allProducts[i] = restored;
+      await api.updateQuantity(existing.name, state.listId, 1, newFreq);
+    } else {
+      const p = { name: trimmed, quantity: 1, category: 14, freq: 1, list_id: state.listId };
+      state.products.push(p);
+      state.allProducts.push(p);
+      await api.upsert(p);
+    }
+    notify('success');
+    closeAddSheet();
+  } catch (e) {
+    await showAlert('Не удалось добавить продукт');
+  }
+}
+async function deleteFromDatabase(name) {
+  const ok = await showConfirm(`Вы действительно хотите удалить продукт «${name}» из базы данных?`);
+  if (!ok) return;
+  try {
+    state.products = state.products.filter(p => p.name !== name);
+    state.allProducts = state.allProducts.filter(p => p.name !== name);
+    await api.remove(name, state.listId);
+    updateAddSheetPartial();
+  } catch (e) {
+    await showAlert('Не удалось удалить продукт');
+  }
+}
+
+/* ---- Category picker sheet ---- */
+function openCategoryPicker(product) {
+  haptic('light');
+  state.selectedProduct = product;
+  state.showCategoryPicker = true;
+  render();
+}
+function closeCategoryPicker() {
+  state.showCategoryPicker = false;
+  state.selectedProduct = null;
+  setMainButton(null); setBackButton(null);
+  render();
+}
+function renderCategorySheet(ov) {
+  const availableIds = Object.keys(categoryNames).map(Number).sort((a,b)=>a-b).slice(0, -1); // drop last, matches original
+  const p = state.selectedProduct;
+  let selected = p && availableIds.includes(p.category) ? p.category : availableIds[0];
+  ov.innerHTML = `
+    <div class="ov-backdrop" id="catBackdrop"></div>
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-title">Выберите категорию</div>
+      <div class="cat-pick-list" id="catPickList">
+        ${availableIds.map(cid => `
+          <div class="cat-pick-row ${cid===selected?'active':''}" data-cid="${cid}">
+            <div class="label">${categoryNames[cid]}</div>
+            <div class="dot"></div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+  document.getElementById('catBackdrop').onclick = () => { haptic('light'); closeCategoryPicker(); };
+  const rows = () => document.querySelectorAll('.cat-pick-row');
+  rows().forEach(row => {
+    row.onclick = () => {
+      haptic('light');
+      selected = Number(row.getAttribute('data-cid'));
+      rows().forEach(r => r.classList.toggle('active', Number(r.getAttribute('data-cid')) === selected));
+    };
+  });
+  setBackButton(() => { haptic('light'); closeCategoryPicker(); });
+  setMainButton({
+    text: 'Сохранить',
+    onClick: async () => {
+      const product = state.selectedProduct;
+      if (!product) { closeCategoryPicker(); return; }
+      const idx = state.products.findIndex(x => x.name === product.name);
+      if (idx >= 0) state.products[idx] = { ...state.products[idx], category: selected };
+      closeCategoryPicker();
+      try { await api.updateCategory(product.name, state.listId, selected); }
+      catch (e) { console.log('Ошибка обновления категории', e); }
+    }
+  });
+}
+
+/* ---- Quantity change ---- */
+async function changeQuantity(product, change) {
+  haptic(change < 0 && (product.quantity + change) <= 0 ? 'heavy' : 'light');
+  const idx = state.products.findIndex(p => p.name === product.name);
+  if (idx < 0) return;
+  const newQty = state.products[idx].quantity + change;
+  if (newQty <= 0) {
+    state.products.splice(idx, 1);
+  } else {
+    state.products[idx] = { ...state.products[idx], quantity: newQty };
+  }
+  render();
+  try { await api.updateQuantity(product.name, state.listId, Math.max(newQty, 0), product.freq); }
+  catch (e) { console.log('Ошибка обновления количества', e); }
+}
+
+/* ---- Menu (Telegram native popup) ---- */
+function openMenu() {
+  haptic('light');
+  if (tg && tg.showPopup) {
+    tg.showPopup({
+      title: 'Список покупок',
+      message: state.listId ? `Код списка: ${state.listId}` : '',
+      buttons: [
+        { id: 'copy', type: 'default', text: 'Скопировать код' },
+        { id: 'logout', type: 'destructive', text: 'Выйти из списка' },
+        { id: 'cancel', type: 'cancel' },
+      ]
+    }, async (id) => {
+      if (id === 'copy') copyListCode();
+      else if (id === 'logout') await logoutFlow();
+    });
+  } else {
+    // Fallback for testing outside Telegram
+    const choice = prompt('Введите: copy — скопировать код, logout — выйти');
+    if (choice === 'copy') copyListCode();
+    else if (choice === 'logout') logoutFlow();
+  }
+}
+function copyListCode() {
+  if (!state.listId) return;
+  if (navigator.clipboard) navigator.clipboard.writeText(state.listId).catch(()=>{});
+  showAlert(`Код скопирован: ${state.listId}`);
+}
+async function logoutFlow() {
+  const ok = await showConfirm('Вы сможете вернуться, введя код списка. Выйти из списка?');
+  if (!ok) return;
+  await storage.remove('savedListId');
+  state.listId = null;
+  state.isAuthenticated = false;
+  state.isLoaded = false;
+  state.products = [];
+  state.allProducts = [];
+  state.authScreen = 'welcome';
+  render();
+}
+
+/* ---- Data loading ---- */
+function loadData() {
+  state.isLoaded = false;
+  render();
+  Promise.all([
+    api.getActive(state.listId).then(r => { state.products = r; }).catch(e => console.log('Ошибка загрузки продуктов', e)),
+    api.getAll(state.listId).then(r => { state.allProducts = r; }).catch(e => console.log('Ошибка загрузки всех продуктов', e)),
+  ]).finally(() => { state.isLoaded = true; render(); });
+}
+
+/* =========================================================
+   Init
+   ========================================================= */
+async function init() {
+  if (tg) {
+    tg.ready();
+    tg.expand();
+    applyTheme();
+    tg.onEvent('themeChanged', applyTheme);
+  }
+  const saved = await storage.get('savedListId');
+  if (saved) {
+    state.listId = saved;
+    state.isAuthenticated = true;
+    loadData();
+  } else {
+    render();
+  }
+}
+init();
+</script>
+</body>
+</html>
