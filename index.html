@@ -110,11 +110,13 @@
   .prod-row { display:flex; align-items:center; gap: 8px; padding: 9px 16px; border-top: 1px solid var(--sep); }
   .prod-row:first-of-type { border-top: none; }
   .prod-name { flex: 1; font-size: 16px; cursor: pointer; }
-  .qty-controls { display:flex; align-items:center; gap: 2px; }
-  .qty-btn { background: none; border: none; width: 32px; height: 32px; display:flex; align-items:center; justify-content:center; cursor:pointer; color: var(--mint); }
+  .qty-controls { display:flex; align-items:center; gap: 4px; }
+  .qty-btn { background: none; border: none; width: 44px; height: 44px; display:flex; align-items:center; justify-content:center; cursor:pointer; color: var(--mint); flex-shrink:0; }
+  .qty-btn svg { width: 30px; height: 30px; }
   .qty-btn:disabled { color: #B0B0B5; }
-  .qty-val { min-width: 26px; text-align:center; font-size: 16px; }
-  .qty-btn.check { margin-left: 6px; color: var(--mint); }
+  .qty-val { min-width: 30px; text-align:center; font-size: 18px; font-weight: 600; }
+  .qty-btn.check { margin-left: 8px; color: var(--mint); }
+  .qty-btn.check svg { width: 30px; height: 30px; }
 
   .empty-wrap { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap: 6px; }
   .empty-wrap .ic { opacity: 0.55; margin-bottom: 8px; }
